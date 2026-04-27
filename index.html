@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HomeOps</title>
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div id="toast" class="toast hidden"></div>
+
+  <header class="app-header">
+    <div>
+      <h1>HomeOps</h1>
+      <p id="householdName" class="muted">Shared chores & home maintenance</p>
+    </div>
+    <button id="signOutBtn" class="ghost hidden">Sign out</button>
+  </header>
+
+  <main>
+    <section id="configScreen" class="screen card">
+      <h2>Connect Supabase</h2>
+      <p class="muted">Paste your Supabase project URL and public anon key. These are stored on this device only.</p>
+      <label>Supabase URL
+        <input id="supabaseUrlInput" placeholder="https://xxxx.supabase.co" autocomplete="off" />
+      </label>
+      <label>Supabase anon key
+        <textarea id="supabaseKeyInput" rows="4" placeholder="eyJhbGciOi..." autocomplete="off"></textarea>
+      </label>
+      <button id="saveConfigBtn">Save & connect</button>
+      <p class="small muted">The anon key is public by design. Your data protection comes from Supabase Row Level Security policies in the SQL file.</p>
+    </section>
+
+    <section id="authScreen" class="screen card hidden">
+      <h2>Sign in</h2>
+      <p class="muted">Create an account for each person. Use the same household invite code to share chores.</p>
+      <label>Email
+        <input id="emailInput" type="email" placeholder="you@example.com" autocomplete="email" />
+      </label>
+      <label>Password
+        <input id="passwordInput" type="password" placeholder="Minimum 6 characters" autocomplete="current-password" />
+      </label>
+      <div class="button-row">
+        <button id="signInBtn">Sign in</button>
+        <button id="signUpBtn" class="secondary">Create account</button>
+      </div>
+    </section>
+
+    <section id="householdScreen" class="screen card hidden">
+      <h2>Set up household</h2>
+      <p class="muted">Create a household, or join one using an invite code.</p>
+      <label>Your display name
+        <input id="displayNameInput" placeholder="Macks" />
+      </label>
+      <label>Household name
+        <input id="newHouseholdNameInput" placeholder="Macks & Marina Home" />
+      </label>
+      <button id="createHouseholdBtn">Create household</button>
+      <hr />
+      <label>Invite code
+        <input id="inviteCodeInput" placeholder="HOME-ABC123" />
+      </label>
+      <button id="joinHouseholdBtn" class="secondary">Join household</button>
+    </section>
+
+    <section id="appScreen" class="screen hidden">
+      <nav class="tabs">
+        <button class="tab active" data-tab="home">Home</button>
+        <button class="tab" data-tab="chores">Chores</button>
+        <button class="tab" data-tab="people">People</button>
+        <button class="tab" data-tab="settings">Settings</button>
+      </nav>
+
+      <section id="homeTab" class="tab-page">
+        <div class="summary-grid">
+          <div class="summary-card"><span id="todayCount">0</span><small>Today</small></div>
+          <div class="summary-card"><span id="overdueCount">0</span><small>Overdue</small></div>
+          <div class="summary-card"><span id="upcomingCount">0</span><small>Upcoming</small></div>
+          <div class="summary-card"><span id="weekPoints">0</span><small>Week pts</small></div>
+        </div>
+        <div class="section-heading"><h2>Due now</h2><button id="quickAddBtn" class="ghost">+ Add</button></div>
+        <div id="dueNowList" class="list"></div>
+        <h2>Upcoming</h2>
+        <div id="upcomingList" class="list"></div>
+      </section>
+
+      <section id="choresTab" class="tab-page hidden">
+        <div class="section-heading"><h2>Chores</h2><button id="addChoreBtn">+ Chore</button></div>
+        <div class="filters">
+          <button class="filter active" data-filter="all">All</button>
+          <button class="filter" data-filter="Daily">Daily</button>
+          <button class="filter" data-filter="Weekly">Weekly</button>
+          <button class="filter" data-filter="Monthly">Monthly</button>
+          <button class="filter" data-filter="Maintenance">Maintenance</button>
+        </div>
+        <div id="choreList" class="list"></div>
+      </section>
+
+      <section id="peopleTab" class="tab-page hidden">
+        <h2>People</h2>
+        <div id="peopleList" class="list"></div>
+        <h2>Recent completions</h2>
+        <div id="completionList" class="list"></div>
+      </section>
+
+      <section id="settingsTab" class="tab-page hidden">
+        <div class="card">
+          <h2>Household</h2>
+          <p id="inviteCodeDisplay" class="code"></p>
+          <button id="copyInviteBtn" class="secondary">Copy invite code</button>
+        </div>
+        <div class="card">
+          <h2>Backup</h2>
+          <button id="exportJsonBtn">Export JSON backup</button>
+          <p class="small muted">Keep occasional backups in case you ever move away from Supabase free tier.</p>
+        </div>
+        <div class="card danger-zone">
+          <h2>Config</h2>
+          <button id="resetConfigBtn" class="ghost danger">Reset Supabase config on this device</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="choreDialog">
+    <form method="dialog" id="choreForm" class="dialog-form">
+      <h2 id="choreDialogTitle">Add chore</h2>
+      <input type="hidden" id="choreIdInput" />
+      <label>Name
+        <input id="choreTitleInput" required placeholder="Clean bathrooms" />
+      </label>
+      <label>Category
+        <select id="categoryInput">
+          <option>Daily</option>
+          <option>Weekly</option>
+          <option>Monthly</option>
+          <option>Maintenance</option>
+          <option>Pet Care</option>
+          <option>Kitchen</option>
+          <option>Bathroom</option>
+          <option>Outdoor</option>
+        </select>
+      </label>
+      <label>Assigned to
+        <select id="assignedToInput"></select>
+      </label>
+      <div class="two-col">
+        <label>Frequency
+          <select id="frequencyTypeInput">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </label>
+        <label>Every
+          <input id="frequencyIntervalInput" type="number" min="1" value="1" />
+        </label>
+      </div>
+      <label>Next due date
+        <input id="nextDueDateInput" type="date" required />
+      </label>
+      <label>Recurrence mode
+        <select id="recurrenceModeInput">
+          <option value="fixed">Fixed schedule</option>
+          <option value="rolling">Rolling from completion date</option>
+        </select>
+      </label>
+      <label>Weight / points
+        <input id="weightInput" type="number" min="1" max="10" value="2" />
+      </label>
+      <label>Notes
+        <textarea id="notesInput" rows="3" placeholder="Filter size, where supplies are stored, etc."></textarea>
+      </label>
+      <div class="button-row">
+        <button id="saveChoreBtn" value="default">Save</button>
+        <button class="secondary" value="cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
