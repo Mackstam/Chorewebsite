@@ -69,6 +69,7 @@
     <section id="appScreen" class="screen hidden">
       <nav class="tabs">
         <button class="tab active" data-tab="home">Home</button>
+        <button class="tab" data-tab="schedule">Schedule</button>
         <button class="tab" data-tab="chores">Chores</button>
         <button class="tab" data-tab="people">People</button>
         <button class="tab" data-tab="settings">Settings</button>
@@ -85,6 +86,18 @@
         <div id="dueNowList" class="list"></div>
         <h2>Upcoming</h2>
         <div id="upcomingList" class="list"></div>
+      </section>
+
+      <section id="scheduleTab" class="tab-page hidden">
+        <div class="section-heading"><h2>Schedule</h2><button id="scheduleTodayBtn" class="ghost">Today</button></div>
+        <div class="schedule-controls card-flat">
+          <button id="prevDayBtn" class="secondary">‹</button>
+          <label class="schedule-date-label">Date
+            <input id="scheduleDateInput" type="date" />
+          </label>
+          <button id="nextDayBtn" class="secondary">›</button>
+        </div>
+        <div id="scheduleList" class="schedule-list"></div>
       </section>
 
       <section id="choresTab" class="tab-page hidden">
@@ -169,6 +182,29 @@
           <option value="rolling">Rolling from completion date</option>
         </select>
       </label>
+      <label>Priority
+        <select id="priorityInput">
+          <option value="low">Low</option>
+          <option value="normal" selected>Normal</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </label>
+      <label>Schedule
+        <select id="timeModeInput">
+          <option value="anytime">Anytime that day</option>
+          <option value="exact">Exact time</option>
+          <option value="window">Time window</option>
+        </select>
+      </label>
+      <div class="two-col time-fields">
+        <label>Start time
+          <input id="startTimeInput" type="time" />
+        </label>
+        <label>End time
+          <input id="endTimeInput" type="time" />
+        </label>
+      </div>
       <label>Weight / points
         <input id="weightInput" type="number" min="1" max="10" value="2" />
       </label>

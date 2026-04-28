@@ -5,11 +5,12 @@ const state = {
   members: [],
   chores: [],
   completions: [],
-  currentFilter: 'all'
+  currentFilter: 'all',
+  currentScheduleDate: todayISO()
 };
 
 const $ = (id) => document.getElementById(id);
-const todayISO = () => new Date().toISOString().slice(0, 10);
+function todayISO() { return new Date().toISOString().slice(0, 10); }
 const fmtDate = (iso) => iso ? new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'No date';
 const toast = (msg) => {
   const el = $('toast');
@@ -19,6 +20,9 @@ const toast = (msg) => {
 };
 const show = (id) => $(id).classList.remove('hidden');
 const hide = (id) => $(id).classList.add('hidden');
+
+const priorityRank = { urgent: 4, high: 3, normal: 2, low: 1 };
+const priorityLabel = { urgent: 'Urgent', high: 'High', normal: 'Normal', low: 'Low' };
 
 function saveLocalConfig(url, key) {
   localStorage.setItem('homeops_supabase_url', url.trim());
@@ -93,6 +97,7 @@ function bindEvents() {
   $('addChoreBtn').onclick = () => openChoreDialog();
   $('quickAddBtn').onclick = () => openChoreDialog();
   $('choreForm').onsubmit = saveChore;
+  $('timeModeInput').onchange = updateTimeFieldVisibility;
   $('copyInviteBtn').onclick = async () => {
     await navigator.clipboard.writeText(state.household.invite_code);
     toast('Invite code copied.');
@@ -103,6 +108,15 @@ function bindEvents() {
     localStorage.removeItem('homeops_supabase_key');
     location.reload();
   };
+
+  $('scheduleDateInput').value = state.currentScheduleDate;
+  $('scheduleDateInput').onchange = () => {
+    state.currentScheduleDate = $('scheduleDateInput').value || todayISO();
+    renderSchedule();
+  };
+  $('scheduleTodayBtn').onclick = () => setScheduleDate(todayISO());
+  $('prevDayBtn').onclick = () => shiftScheduleDate(-1);
+  $('nextDayBtn').onclick = () => shiftScheduleDate(1);
 
   document.querySelectorAll('.tab').forEach(btn => btn.onclick = () => switchTab(btn.dataset.tab));
   document.querySelectorAll('.filter').forEach(btn => btn.onclick = () => {
@@ -165,20 +179,19 @@ async function joinHousehold() {
   showOnly('appScreen');
 }
 
-
 async function seedStarterChores() {
   const starter = [
-    ['Dishes', 'Daily', 'daily', 1, 'fixed', 1],
-    ['Wipe kitchen counters', 'Daily', 'daily', 1, 'fixed', 1],
-    ['Scoop litter', 'Pet Care', 'daily', 1, 'fixed', 2],
-    ['Vacuum main floor', 'Weekly', 'weekly', 1, 'fixed', 3],
-    ['Clean bathrooms', 'Bathroom', 'weekly', 1, 'fixed', 5],
-    ['Wash bedding', 'Monthly', 'weekly', 2, 'rolling', 4],
-    ['Clean microwave', 'Kitchen', 'monthly', 1, 'rolling', 3],
-    ['Change furnace filter', 'Maintenance', 'monthly', 3, 'rolling', 4],
-    ['Test smoke detectors', 'Maintenance', 'monthly', 6, 'rolling', 3]
+    ['Dishes', 'Daily', 'daily', 1, 'fixed', 1, 'normal', '18:00'],
+    ['Wipe kitchen counters', 'Daily', 'daily', 1, 'fixed', 1, 'normal', '19:00'],
+    ['Scoop litter', 'Pet Care', 'daily', 1, 'fixed', 2, 'high', '20:00'],
+    ['Vacuum main floor', 'Weekly', 'weekly', 1, 'fixed', 3, 'normal', null],
+    ['Clean bathrooms', 'Bathroom', 'weekly', 1, 'fixed', 5, 'high', null],
+    ['Wash bedding', 'Monthly', 'weekly', 2, 'rolling', 4, 'normal', null],
+    ['Clean microwave', 'Kitchen', 'monthly', 1, 'rolling', 3, 'low', null],
+    ['Change furnace filter', 'Maintenance', 'monthly', 3, 'rolling', 4, 'high', null],
+    ['Test smoke detectors', 'Maintenance', 'monthly', 6, 'rolling', 3, 'high', null]
   ];
-  await state.supabase.from('chores').insert(starter.map(([title, category, frequency_type, frequency_interval, recurrence_mode, weight]) => ({
+  await state.supabase.from('chores').insert(starter.map(([title, category, frequency_type, frequency_interval, recurrence_mode, weight, priority, start_time]) => ({
     household_id: state.household.id,
     title,
     category,
@@ -188,6 +201,10 @@ async function seedStarterChores() {
     recurrence_mode,
     next_due_date: todayISO(),
     weight,
+    priority,
+    time_mode: start_time ? 'exact' : 'anytime',
+    start_time,
+    end_time: null,
     notes: '',
     active: true
   })));
@@ -209,7 +226,7 @@ async function loadMembers() {
 async function loadChores() {
   const { data, error } = await state.supabase.from('chores').select('*').eq('household_id', state.household.id).eq('active', true).order('next_due_date');
   if (error) return toast(error.message);
-  state.chores = data || [];
+  state.chores = (data || []).sort(compareChores);
 }
 async function loadCompletions() {
   const { data, error } = await state.supabase
@@ -231,11 +248,13 @@ function fillAssignedOptions() {
 
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['home', 'chores', 'people', 'settings'].forEach(t => $(`${t}Tab`).classList.toggle('hidden', t !== tab));
+  ['home', 'schedule', 'chores', 'people', 'settings'].forEach(t => $(`${t}Tab`).classList.toggle('hidden', t !== tab));
+  if (tab === 'schedule') renderSchedule();
 }
 
 function renderAll() {
   renderHome();
+  renderSchedule();
   renderChores();
   renderPeople();
 }
@@ -257,11 +276,54 @@ function weekStartISO() {
   const monday = new Date(d.setDate(diff));
   return monday.toISOString().slice(0, 10);
 }
+function compareChores(a, b) {
+  const dateCompare = String(a.next_due_date).localeCompare(String(b.next_due_date));
+  if (dateCompare !== 0) return dateCompare;
+  const aAny = !a.start_time || (a.time_mode || 'anytime') === 'anytime';
+  const bAny = !b.start_time || (b.time_mode || 'anytime') === 'anytime';
+  if (aAny !== bAny) return aAny ? 1 : -1;
+  const timeCompare = String(a.start_time || '99:99').localeCompare(String(b.start_time || '99:99'));
+  if (timeCompare !== 0) return timeCompare;
+  return (priorityRank[b.priority || 'normal'] || 2) - (priorityRank[a.priority || 'normal'] || 2);
+}
+function formatTime(time) {
+  if (!time) return '';
+  const [h, m] = String(time).split(':');
+  const d = new Date();
+  d.setHours(Number(h), Number(m || 0), 0, 0);
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+function scheduleLabel(c) {
+  const mode = c.time_mode || 'anytime';
+  if (mode === 'exact' && c.start_time) return formatTime(c.start_time);
+  if (mode === 'window' && c.start_time && c.end_time) return `${formatTime(c.start_time)}–${formatTime(c.end_time)}`;
+  if (mode === 'window' && c.start_time) return `${formatTime(c.start_time)} onward`;
+  return 'Anytime';
+}
+function scheduleGroup(c) {
+  if (!c.start_time || (c.time_mode || 'anytime') === 'anytime') return 'Anytime';
+  const hour = Number(String(c.start_time).split(':')[0]);
+  if (hour < 12) return 'Morning';
+  if (hour < 17) return 'Afternoon';
+  if (hour < 21) return 'Evening';
+  return 'Night';
+}
+function shiftScheduleDate(days) {
+  const d = new Date(`${state.currentScheduleDate}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  setScheduleDate(d.toISOString().slice(0, 10));
+}
+function setScheduleDate(iso) {
+  state.currentScheduleDate = iso;
+  $('scheduleDateInput').value = iso;
+  renderSchedule();
+}
 
 function renderHome() {
-  const due = state.chores.filter(c => c.next_due_date <= todayISO());
-  const upcoming = state.chores.filter(c => c.next_due_date > todayISO()).slice(0, 8);
-  const overdue = state.chores.filter(c => c.next_due_date < todayISO());
+  const sorted = [...state.chores].sort(compareChores);
+  const due = sorted.filter(c => c.next_due_date <= todayISO());
+  const upcoming = sorted.filter(c => c.next_due_date > todayISO()).slice(0, 8);
+  const overdue = sorted.filter(c => c.next_due_date < todayISO());
   $('todayCount').textContent = state.chores.filter(c => c.next_due_date === todayISO()).length;
   $('overdueCount').textContent = overdue.length;
   $('upcomingCount').textContent = state.chores.filter(c => c.next_due_date > todayISO()).length;
@@ -270,8 +332,35 @@ function renderHome() {
   $('upcomingList').innerHTML = upcoming.length ? upcoming.map(choreCard).join('') : empty('No upcoming chores.');
 }
 
+function renderSchedule() {
+  if (!$('scheduleList')) return;
+  $('scheduleDateInput').value = state.currentScheduleDate;
+  const chores = state.chores.filter(c => c.next_due_date === state.currentScheduleDate).sort(compareChores);
+  if (!chores.length) {
+    $('scheduleList').innerHTML = empty(`No chores scheduled for ${fmtDate(state.currentScheduleDate)}.`);
+    return;
+  }
+  const groups = ['Morning', 'Afternoon', 'Evening', 'Night', 'Anytime'];
+  $('scheduleList').innerHTML = groups.map(group => {
+    const groupChores = chores.filter(c => scheduleGroup(c) === group);
+    if (!groupChores.length) return '';
+    return `<div class="schedule-group"><h3>${group}</h3>${groupChores.map(scheduleRow).join('')}</div>`;
+  }).join('');
+}
+
+function scheduleRow(c) {
+  return `
+    <div class="schedule-row item">
+      <div class="time-chip">${escapeHtml(scheduleLabel(c))}</div>
+      <div class="schedule-row-main">
+        ${choreCard(c)}
+      </div>
+    </div>
+  `;
+}
+
 function renderChores() {
-  let chores = state.chores;
+  let chores = [...state.chores].sort(compareChores);
   if (state.currentFilter !== 'all') chores = chores.filter(c => c.category === state.currentFilter);
   $('choreList').innerHTML = chores.length ? chores.map(choreCard).join('') : empty('No chores found.');
 }
@@ -295,6 +384,7 @@ function renderPeople() {
 function choreCard(c) {
   const status = dueStatus(c);
   const statusText = status === 'overdue' ? `Overdue · due ${fmtDate(c.next_due_date)}` : status === 'today' ? 'Due today' : `Due ${fmtDate(c.next_due_date)}`;
+  const priority = c.priority || 'normal';
   return `
     <div class="item">
       <div class="item-top">
@@ -305,6 +395,8 @@ function choreCard(c) {
         <span class="pill ${status}">${statusText}</span>
       </div>
       <div class="pills">
+        <span class="pill priority-${priority}">${escapeHtml(priorityLabel[priority] || 'Normal')}</span>
+        <span class="pill">${escapeHtml(scheduleLabel(c))}</span>
         <span class="pill">${escapeHtml(c.category)}</span>
         <span class="pill">${c.weight} pts</span>
         <span class="pill">${c.recurrence_mode}</span>
@@ -324,6 +416,17 @@ function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 }
 
+function updateTimeFieldVisibility() {
+  const mode = $('timeModeInput').value;
+  $('startTimeInput').disabled = mode === 'anytime';
+  $('endTimeInput').disabled = mode !== 'window';
+  if (mode === 'anytime') {
+    $('startTimeInput').value = '';
+    $('endTimeInput').value = '';
+  }
+  if (mode === 'exact') $('endTimeInput').value = '';
+}
+
 function openChoreDialog(id = null) {
   const c = id ? state.chores.find(x => x.id === id) : null;
   $('choreDialogTitle').textContent = c ? 'Edit chore' : 'Add chore';
@@ -335,14 +438,20 @@ function openChoreDialog(id = null) {
   $('frequencyIntervalInput').value = c?.frequency_interval || 1;
   $('nextDueDateInput').value = c?.next_due_date || todayISO();
   $('recurrenceModeInput').value = c?.recurrence_mode || 'fixed';
+  $('priorityInput').value = c?.priority || 'normal';
+  $('timeModeInput').value = c?.time_mode || 'anytime';
+  $('startTimeInput').value = c?.start_time ? String(c.start_time).slice(0,5) : '';
+  $('endTimeInput').value = c?.end_time ? String(c.end_time).slice(0,5) : '';
   $('weightInput').value = c?.weight || 2;
   $('notesInput').value = c?.notes || '';
+  updateTimeFieldVisibility();
   $('choreDialog').showModal();
 }
 window.openChoreDialog = openChoreDialog;
 
 async function saveChore(e) {
   e.preventDefault();
+  const timeMode = $('timeModeInput').value;
   const payload = {
     household_id: state.household.id,
     title: $('choreTitleInput').value.trim(),
@@ -352,6 +461,10 @@ async function saveChore(e) {
     frequency_interval: Number($('frequencyIntervalInput').value || 1),
     next_due_date: $('nextDueDateInput').value,
     recurrence_mode: $('recurrenceModeInput').value,
+    priority: $('priorityInput').value,
+    time_mode: timeMode,
+    start_time: timeMode === 'anytime' ? null : ($('startTimeInput').value || null),
+    end_time: timeMode === 'window' ? ($('endTimeInput').value || null) : null,
     weight: Number($('weightInput').value || 1),
     notes: $('notesInput').value.trim(),
     active: true
