@@ -9,6 +9,12 @@ const state = {
   currentScheduleDate: todayISO()
 };
 
+// Optional deploy config.
+// To avoid entering Supabase details on every new phone/browser, paste your public anon key below before uploading app.js to GitHub Pages.
+// The anon/public key is safe to use in browser apps when Row Level Security is enabled. Do NOT paste the service_role/secret key here.
+const DEPLOY_SUPABASE_URL = 'https://ezgyyqcfacfxasjjwsqd.supabase.co';
+const DEPLOY_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6Z3l5cWNmYWNmeGFzamp3c3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMjAxMTksImV4cCI6MjA5Mjg5NjExOX0.O9q3cj5wzG0ICDpfy-bBYvUGvSDmComV3dQySk11Rjg'; // paste legacy anon public key here if you want the app pre-connected
+
 const $ = (id) => document.getElementById(id);
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 const fmtDate = (iso) => iso ? new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'No date';
@@ -24,14 +30,25 @@ const hide = (id) => $(id).classList.add('hidden');
 const priorityRank = { urgent: 4, high: 3, normal: 2, low: 1 };
 const priorityLabel = { urgent: 'Urgent', high: 'High', normal: 'Normal', low: 'Low' };
 
+function frequencyLabel(c) {
+  const interval = Number(c.frequency_interval || 1);
+  const type = c.frequency_type || 'weekly';
+  const singular = { daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year' }[type] || type;
+  const simple = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' }[type];
+  if (interval === 1 && simple) return simple;
+  return `Every ${interval} ${singular}${interval === 1 ? '' : 's'}`;
+}
+
 function saveLocalConfig(url, key) {
   localStorage.setItem('homeops_supabase_url', url.trim());
   localStorage.setItem('homeops_supabase_key', key.trim());
 }
 function getLocalConfig() {
+  const deployUrl = DEPLOY_SUPABASE_URL && DEPLOY_SUPABASE_URL.startsWith('http') ? DEPLOY_SUPABASE_URL.trim() : '';
+  const deployKey = DEPLOY_SUPABASE_ANON_KEY && !DEPLOY_SUPABASE_ANON_KEY.includes('PASTE') ? DEPLOY_SUPABASE_ANON_KEY.trim() : '';
   return {
-    url: localStorage.getItem('homeops_supabase_url') || '',
-    key: localStorage.getItem('homeops_supabase_key') || ''
+    url: deployUrl || localStorage.getItem('homeops_supabase_url') || '',
+    key: deployKey || localStorage.getItem('homeops_supabase_key') || ''
   };
 }
 function initSupabase() {
@@ -390,7 +407,7 @@ function choreCard(c) {
       <div class="item-top">
         <div>
           <h3>${escapeHtml(c.title)}</h3>
-          <p class="muted">${escapeHtml(assignedName(c.assigned_to))} · every ${c.frequency_interval} ${c.frequency_type}${c.frequency_interval > 1 ? 's' : ''}</p>
+          <p class="muted">${escapeHtml(assignedName(c.assigned_to))} · ${escapeHtml(frequencyLabel(c))}</p>
         </div>
         <span class="pill ${status}">${statusText}</span>
       </div>
