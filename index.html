@@ -14,7 +14,7 @@
 
   <header class="app-header">
     <div>
-      <div class="brand-row"><h1>HomeOps</h1><span id="appVersion" class="version-pill">v1.3.3</span></div>
+      <div class="brand-row"><h1>HomeOps</h1><span id="appVersion" class="version-pill">v1.3.4</span></div>
       <p id="householdName" class="muted">Shared chores, rewards & home maintenance</p>
     </div>
     <button id="signOutBtn" class="ghost hidden">Sign out</button>
@@ -81,12 +81,32 @@
         <div class="summary-grid">
           <div class="summary-card"><span id="todayCount">0</span><small>Today</small></div>
           <div class="summary-card"><span id="overdueCount">0</span><small>Overdue</small></div>
-          <div class="summary-card"><span id="upcomingCount">0</span><small>Upcoming</small></div>
+          <button id="upcomingSummaryCard" class="summary-card summary-button" type="button"><span id="upcomingCount">0</span><small>Upcoming</small></button>
           <div class="summary-card"><span id="weekPoints">0</span><small>Week pts</small></div>
         </div>
         <div class="section-heading"><h2>Due now</h2><button id="quickAddBtn" class="ghost primary-ghost">+ Add chore</button></div>
         <div id="dueNowList" class="list"></div>
-        <h2>Upcoming</h2>
+        <h2>Completed today</h2>
+        <div id="completedTodayList" class="list"></div>
+        <div class="section-heading upcoming-heading"><h2>Upcoming</h2><button id="viewUpcomingBtn" class="ghost">View all</button></div>
+        <div class="upcoming-controls card-flat">
+          <label>Show
+            <select id="upcomingRangeInput">
+              <option value="1">Tomorrow</option>
+              <option value="7" selected>Next 7 days</option>
+              <option value="30">Next 30 days</option>
+            </select>
+          </label>
+          <label>Type
+            <select id="upcomingTypeInput">
+              <option value="all" selected>All</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="maintenance">Maintenance</option>
+            </select>
+          </label>
+        </div>
         <div id="upcomingList" class="list"></div>
       </section>
 
@@ -243,9 +263,17 @@
       </label>
       <div class="button-row">
         <button id="saveChoreBtn" value="default">Save</button>
-        <button class="secondary" value="cancel">Cancel</button>
+        <button type="button" id="cancelChoreBtn" class="secondary" value="cancel">Cancel</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="upcomingDialog">
+    <div class="dialog-form">
+      <div class="dialog-header"><h2>Upcoming chores</h2><button type="button" class="dialog-close" id="closeUpcomingDialogBtn" aria-label="Close">×</button></div>
+      <p class="muted small">Shows the next upcoming occurrence for each chore, so daily chores do not repeat over and over.</p>
+      <div id="upcomingDialogList" class="list"></div>
+    </div>
   </dialog>
 
   <dialog id="rewardDialog">
@@ -263,7 +291,7 @@
       </label>
       <div class="button-row">
         <button id="saveRewardBtn" value="default">Save reward</button>
-        <button class="secondary" value="cancel">Cancel</button>
+        <button type="button" id="cancelRewardBtn" class="secondary" value="cancel">Cancel</button>
       </div>
     </form>
   </dialog>

@@ -1,4 +1,4 @@
-const APP_VERSION = 'v1.3.3';
+const APP_VERSION = 'v1.3.4';
 
 const state = {
   supabase: null,
@@ -12,7 +12,10 @@ const state = {
   rewards: [],
   rewardRequests: [],
   currentFilter: 'all',
-  currentScheduleDate: todayISO()
+  currentScheduleDate: todayISO(),
+  upcomingDays: 7,
+  upcomingType: 'all',
+  refreshTimer: null
 };
 
 // Optional deploy config.
@@ -32,6 +35,17 @@ const toast = (msg) => {
 };
 const show = (id) => $(id).classList.remove('hidden');
 const hide = (id) => $(id).classList.add('hidden');
+
+function updateStickyOffset() {
+  const header = document.querySelector('.app-header');
+  if (!header) return;
+  document.documentElement.style.setProperty('--header-height', Math.ceil(header.getBoundingClientRect().height) + 'px');
+}
+function initStickyOffset() {
+  updateStickyOffset();
+  window.addEventListener('resize', updateStickyOffset);
+  if (window.ResizeObserver) new ResizeObserver(updateStickyOffset).observe(document.querySelector('.app-header'));
+}
 
 const priorityRank = { urgent: 4, high: 3, normal: 2, low: 1 };
 const priorityLabel = { urgent: 'Urgent', high: 'High', normal: 'Normal', low: 'Low' };
@@ -65,6 +79,7 @@ function initSupabase() {
 }
 
 async function boot() {
+  initStickyOffset();
   bindEvents();
   const hasConfig = initSupabase();
   if (!hasConfig) {
@@ -123,7 +138,14 @@ function bindEvents() {
   $('rewardForm').onsubmit = saveReward;
   $('addRewardBtn').onclick = () => openRewardDialog();
   $('closeChoreDialogBtn').onclick = () => $('choreDialog').close();
+  $('cancelChoreBtn').onclick = () => $('choreDialog').close();
   $('closeRewardDialogBtn').onclick = () => $('rewardDialog').close();
+  $('cancelRewardBtn').onclick = () => $('rewardDialog').close();
+  $('viewUpcomingBtn').onclick = openUpcomingDialog;
+  $('upcomingSummaryCard').onclick = openUpcomingDialog;
+  $('closeUpcomingDialogBtn').onclick = () => $('upcomingDialog').close();
+  $('upcomingRangeInput').onchange = () => { state.upcomingDays = Number($('upcomingRangeInput').value || 7); renderHome(); };
+  $('upcomingTypeInput').onchange = () => { state.upcomingType = $('upcomingTypeInput').value || 'all'; renderHome(); };
   $('refreshCompletedBtn').onclick = async () => { await loadAllData(); toast('Completed tasks refreshed.'); };
   $('timeModeInput').onchange = updateTimeFieldVisibility;
   $('copyInviteBtn').onclick = async () => {
@@ -176,6 +198,7 @@ async function loadHouseholdOrSetup() {
   state.household = household;
   await loadAllData();
   showOnly('appScreen');
+  startAutoRefresh();
 }
 
 function makeInviteCode() {
@@ -200,6 +223,7 @@ async function createHousehold() {
   await seedStarterChores();
   await loadAllData();
   showOnly('appScreen');
+  startAutoRefresh();
 }
 
 async function joinHousehold() {
@@ -213,6 +237,7 @@ async function joinHousehold() {
   state.household = household;
   await loadAllData();
   showOnly('appScreen');
+  startAutoRefresh();
 }
 
 async function seedStarterChores() {
@@ -244,6 +269,21 @@ async function seedStarterChores() {
     notes: '',
     active: true
   })));
+}
+
+function anyDialogOpen() {
+  return Array.from(document.querySelectorAll('dialog')).some(d => d.open);
+}
+
+function startAutoRefresh() {
+  if (state.refreshTimer) return;
+  state.refreshTimer = setInterval(() => {
+    if (!state.household || document.visibilityState !== 'visible' || anyDialogOpen()) return;
+    loadAllData();
+  }, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.household && !anyDialogOpen()) loadAllData();
+  });
 }
 
 async function loadAllData() {
@@ -461,17 +501,28 @@ function occursOnDate(c, dateIso) {
   }
   return false;
 }
-function upcomingOccurrences(days = 30, limit = 10) {
+function upcomingTypeMatches(chore, type) {
+  if (!type || type === 'all') return true;
+  if (type === 'maintenance') return String(chore.category || '').toLowerCase() === 'maintenance';
+  return String(chore.frequency_type || '').toLowerCase() === type;
+}
+
+function upcomingOccurrences(days = 7, limit = 5, type = 'all') {
   const rows = [];
   const start = new Date(`${todayISO()}T12:00:00`);
+  const seen = new Set();
   for (let i = 1; i <= days; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const iso = d.toISOString().slice(0, 10);
     state.chores.forEach(chore => {
-      if (occursOnDate(chore, iso)) rows.push({ chore, date: iso });
+      if (seen.has(chore.id)) return;
+      if (!upcomingTypeMatches(chore, type)) return;
+      if (occursOnDate(chore, iso)) {
+        rows.push({ chore, date: iso });
+        seen.add(chore.id);
+      }
     });
-    if (rows.length >= limit) break;
   }
   return rows.sort((a, b) => String(a.date).localeCompare(String(b.date)) || compareChores(a.chore, b.chore)).slice(0, limit);
 }
@@ -479,15 +530,31 @@ function upcomingOccurrences(days = 30, limit = 10) {
 function renderHome() {
   const sorted = [...state.chores].sort(compareChores);
   const due = sorted.filter(c => c.next_due_date <= todayISO());
-  const upcoming = upcomingOccurrences(30, 10);
+  const days = Number($('upcomingRangeInput')?.value || state.upcomingDays || 7);
+  const type = $('upcomingTypeInput')?.value || state.upcomingType || 'all';
+  state.upcomingDays = days;
+  state.upcomingType = type;
+  const allUpcoming = upcomingOccurrences(days, 999, type);
+  const upcoming = allUpcoming.slice(0, 5);
   const overdue = sorted.filter(c => c.next_due_date < todayISO());
+  const completedToday = state.completions.filter(c => String(c.completed_at).slice(0,10) === todayISO()).slice(0, 5);
   $('todayCount').textContent = state.chores.filter(c => occursOnDate(c, todayISO())).length;
   $('overdueCount').textContent = overdue.length;
-  $('upcomingCount').textContent = upcoming.length;
+  $('upcomingCount').textContent = allUpcoming.length;
   $('weekPoints').textContent = state.completions.filter(c => c.completed_at.slice(0,10) >= weekStartISO()).reduce((sum, c) => sum + completionWeight(c), 0);
   $('dueNowList').innerHTML = due.length ? due.map(c => choreCard(c)).join('') : empty('Nothing due right now.');
-  $('upcomingList').innerHTML = upcoming.length ? upcoming.map(row => choreCard(row.chore, { occurrenceDate: row.date, showActions: false })).join('') : empty('No upcoming chores in the next 30 days.');
+  $('completedTodayList').innerHTML = completedToday.length ? completedToday.map(completionCard).join('') : empty('No completed chores yet today.');
+  $('upcomingList').innerHTML = upcoming.length ? upcoming.map(row => choreCard(row.chore, { occurrenceDate: row.date, showActions: false })).join('') : empty('No upcoming chores in the selected ' + (days === 1 ? 'day' : days + ' days') + '.');
 }
+
+function openUpcomingDialog() {
+  const days = Number($('upcomingRangeInput')?.value || state.upcomingDays || 7);
+  const type = $('upcomingTypeInput')?.value || state.upcomingType || 'all';
+  const rows = upcomingOccurrences(days, 999, type);
+  $('upcomingDialogList').innerHTML = rows.length ? rows.map(row => choreCard(row.chore, { occurrenceDate: row.date, showActions: false })).join('') : empty('No upcoming chores for that selection.');
+  $('upcomingDialog').showModal();
+}
+window.openUpcomingDialog = openUpcomingDialog;
 
 function renderSchedule() {
   if (!$('scheduleList')) return;
