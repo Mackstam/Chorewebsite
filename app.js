@@ -5,6 +5,8 @@ const state = {
   members: [],
   chores: [],
   completions: [],
+  rewards: [],
+  rewardRequests: [],
   currentFilter: 'all',
   currentScheduleDate: todayISO()
 };
@@ -13,7 +15,7 @@ const state = {
 // To avoid entering Supabase details on every new phone/browser, paste your public anon key below before uploading app.js to GitHub Pages.
 // The anon/public key is safe to use in browser apps when Row Level Security is enabled. Do NOT paste the service_role/secret key here.
 const DEPLOY_SUPABASE_URL = 'https://ezgyyqcfacfxasjjwsqd.supabase.co';
-const DEPLOY_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6Z3l5cWNmYWNmeGFzamp3c3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMjAxMTksImV4cCI6MjA5Mjg5NjExOX0.O9q3cj5wzG0ICDpfy-bBYvUGvSDmComV3dQySk11Rjg'; // paste legacy anon public key here if you want the app pre-connected
+const DEPLOY_SUPABASE_ANON_KEY = ''; // paste legacy anon public key here if you want the app pre-connected
 
 const $ = (id) => document.getElementById(id);
 function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -114,6 +116,8 @@ function bindEvents() {
   $('addChoreBtn').onclick = () => openChoreDialog();
   $('quickAddBtn').onclick = () => openChoreDialog();
   $('choreForm').onsubmit = saveChore;
+  $('rewardForm').onsubmit = saveReward;
+  $('addRewardBtn').onclick = () => openRewardDialog();
   $('timeModeInput').onchange = updateTimeFieldVisibility;
   $('copyInviteBtn').onclick = async () => {
     await navigator.clipboard.writeText(state.household.invite_code);
@@ -228,7 +232,7 @@ async function seedStarterChores() {
 }
 
 async function loadAllData() {
-  await Promise.all([loadMembers(), loadChores(), loadCompletions()]);
+  await Promise.all([loadMembers(), loadChores(), loadCompletions(), loadRewards(), loadRewardRequests()]);
   $('householdName').textContent = state.household.name;
   $('inviteCodeDisplay').textContent = `Invite code: ${state.household.invite_code}`;
   fillAssignedOptions();
@@ -256,6 +260,28 @@ async function loadCompletions() {
   state.completions = data || [];
 }
 
+async function loadRewards() {
+  const { data, error } = await state.supabase
+    .from('rewards')
+    .select('*')
+    .eq('household_id', state.household.id)
+    .eq('active', true)
+    .order('cost', { ascending: true });
+  if (error) return toast(error.message);
+  state.rewards = data || [];
+}
+
+async function loadRewardRequests() {
+  const { data, error } = await state.supabase
+    .from('reward_requests')
+    .select('*')
+    .eq('household_id', state.household.id)
+    .order('requested_at', { ascending: false })
+    .limit(80);
+  if (error) return toast(error.message);
+  state.rewardRequests = data || [];
+}
+
 function fillAssignedOptions() {
   const select = $('assignedToInput');
   select.innerHTML = '';
@@ -265,8 +291,9 @@ function fillAssignedOptions() {
 
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['home', 'schedule', 'chores', 'people', 'settings'].forEach(t => $(`${t}Tab`).classList.toggle('hidden', t !== tab));
+  ['home', 'schedule', 'chores', 'people', 'rewards', 'settings'].forEach(t => $(`${t}Tab`).classList.toggle('hidden', t !== tab));
   if (tab === 'schedule') renderSchedule();
+  if (tab === 'rewards') renderRewards();
 }
 
 function renderAll() {
@@ -274,6 +301,7 @@ function renderAll() {
   renderSchedule();
   renderChores();
   renderPeople();
+  renderRewards();
 }
 
 function dueStatus(chore) {
@@ -285,6 +313,31 @@ function dueStatus(chore) {
 function assignedName(value) {
   if (!value || ['Anyone', 'Both', 'Rotating'].includes(value)) return value || 'Anyone';
   return state.members.find(m => m.user_id === value)?.display_name || 'Unknown';
+}
+
+function memberName(userId) {
+  return state.members.find(m => m.user_id === userId)?.display_name || 'Unknown';
+}
+function categoryIcon(category) {
+  const icons = {
+    'Daily': '✨', 'Weekly': '🧹', 'Monthly': '🗓️', 'Maintenance': '🛠️',
+    'Pet Care': '🐾', 'Kitchen': '🍽️', 'Bathroom': '🛁', 'Outdoor': '🌿',
+    'Laundry': '🧺', 'Bedroom': '🛏️', 'General': '🏡'
+  };
+  return icons[category] || '🏡';
+}
+function pointBalances() {
+  const balances = Object.fromEntries(state.members.map(m => [m.user_id, { name: m.display_name, earned: 0, spent: 0, balance: 0 }]));
+  state.completions.forEach(c => {
+    if (!balances[c.completed_by]) return;
+    balances[c.completed_by].earned += c.chores?.weight || 0;
+  });
+  state.rewardRequests.filter(r => r.status === 'fulfilled').forEach(r => {
+    if (!balances[r.requested_by]) return;
+    balances[r.requested_by].spent += r.reward_cost || 0;
+  });
+  Object.values(balances).forEach(b => b.balance = b.earned - b.spent);
+  return balances;
 }
 function weekStartISO() {
   const d = new Date();
@@ -398,19 +451,77 @@ function renderPeople() {
   `).join('') : empty('No completions yet.');
 }
 
+
+function renderRewards() {
+  if (!$('rewardBalanceList')) return;
+  const balances = pointBalances();
+  $('rewardBalanceList').innerHTML = Object.entries(balances).map(([userId, b]) => `
+    <div class="summary-card reward-balance"><span>${b.balance}</span><small>${escapeHtml(b.name)} available pts</small><p class="small muted">${b.earned} earned · ${b.spent} spent</p></div>
+  `).join('') || empty('No people yet.');
+
+  $('rewardShopList').innerHTML = state.rewards.length ? state.rewards.map(rewardCard).join('') : empty('No rewards yet. Add a few rewards to make the points useful.');
+
+  const openRequests = state.rewardRequests.filter(r => ['pending', 'approved'].includes(r.status));
+  const history = state.rewardRequests.filter(r => !['pending', 'approved'].includes(r.status));
+  $('rewardRequestList').innerHTML = openRequests.length ? openRequests.map(rewardRequestCard).join('') : empty('No open reward requests.');
+  $('rewardHistoryList').innerHTML = history.length ? history.slice(0, 12).map(rewardRequestCard).join('') : empty('No reward history yet.');
+}
+
+function rewardCard(r) {
+  const balances = pointBalances();
+  const myBalance = balances[state.user.id]?.balance || 0;
+  const canAfford = myBalance >= r.cost;
+  return `
+    <div class="item reward-card">
+      <div class="item-top">
+        <div><h3>🎁 ${escapeHtml(r.name)}</h3><p class="muted">${escapeHtml(r.description || 'No description')}</p></div>
+        <span class="pill done">${r.cost} pts</span>
+      </div>
+      <div class="item-actions">
+        <button onclick="requestReward('${r.id}')" ${canAfford ? '' : 'disabled'}>${canAfford ? 'Request' : 'Not enough pts'}</button>
+        <button class="secondary" onclick="openRewardDialog('${r.id}')">Edit</button>
+        <button class="ghost danger" onclick="archiveReward('${r.id}')">Archive</button>
+      </div>
+    </div>
+  `;
+}
+
+function rewardRequestCard(r) {
+  const statusClass = r.status === 'fulfilled' ? 'done' : r.status === 'declined' || r.status === 'cancelled' ? 'overdue' : 'today';
+  return `
+    <div class="item reward-request-card">
+      <div class="item-top">
+        <div>
+          <h3>🎀 ${escapeHtml(r.reward_name)}</h3>
+          <p class="muted">Requested by ${escapeHtml(memberName(r.requested_by))} on ${fmtDate(String(r.requested_at).slice(0,10))}</p>
+        </div>
+        <span class="pill ${statusClass}">${escapeHtml(r.status)}</span>
+      </div>
+      <div class="pills"><span class="pill">${r.reward_cost} pts</span>${r.note ? `<span class="pill">${escapeHtml(r.note)}</span>` : ''}</div>
+      <div class="item-actions">
+        ${r.status === 'pending' ? `<button class="secondary" onclick="setRewardRequestStatus('${r.id}', 'approved')">Approve</button><button class="ghost danger" onclick="setRewardRequestStatus('${r.id}', 'declined')">Decline</button>` : ''}
+        ${['pending', 'approved'].includes(r.status) ? `<button onclick="setRewardRequestStatus('${r.id}', 'fulfilled')">Mark fulfilled</button><button class="secondary" onclick="setRewardRequestStatus('${r.id}', 'cancelled')">Cancel</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function choreCard(c) {
   const status = dueStatus(c);
   const statusText = status === 'overdue' ? `Overdue · due ${fmtDate(c.next_due_date)}` : status === 'today' ? 'Due today' : `Due ${fmtDate(c.next_due_date)}`;
   const priority = c.priority || 'normal';
+  const claimedText = c.claimed_by ? `${escapeHtml(memberName(c.claimed_by))} plans to do this` : 'Nobody has claimed this yet';
+  const icon = categoryIcon(c.category);
   return `
-    <div class="item">
+    <div class="item chore-card">
       <div class="item-top">
         <div>
-          <h3>${escapeHtml(c.title)}</h3>
-          <p class="muted">${escapeHtml(assignedName(c.assigned_to))} · ${escapeHtml(frequencyLabel(c))}</p>
+          <h3><span class="category-icon">${icon}</span> ${escapeHtml(c.title)}</h3>
+          <p class="muted">Assigned: ${escapeHtml(assignedName(c.assigned_to))} · ${escapeHtml(frequencyLabel(c))}</p>
         </div>
         <span class="pill ${status}">${statusText}</span>
       </div>
+      <div class="claim-line ${c.claimed_by ? 'claimed' : ''}">${claimedText}</div>
       <div class="pills">
         <span class="pill priority-${priority}">${escapeHtml(priorityLabel[priority] || 'Normal')}</span>
         <span class="pill">${escapeHtml(scheduleLabel(c))}</span>
@@ -420,6 +531,7 @@ function choreCard(c) {
       </div>
       ${c.notes ? `<p class="small muted">${escapeHtml(c.notes)}</p>` : ''}
       <div class="item-actions">
+        ${c.claimed_by ? `<button class="secondary" onclick="unclaimChore('${c.id}')">Unclaim</button>` : `<button class="secondary" onclick="claimChore('${c.id}')">I'll do it</button>`}
         <button onclick="completeChore('${c.id}')">Complete</button>
         <button class="secondary" onclick="openChoreDialog('${c.id}')">Edit</button>
         <button class="ghost danger" onclick="archiveChore('${c.id}')">Archive</button>
@@ -504,6 +616,23 @@ function addInterval(dateIso, type, interval) {
   return d.toISOString().slice(0, 10);
 }
 
+
+async function claimChore(id) {
+  const { error } = await state.supabase.from('chores').update({ claimed_by: state.user.id, claimed_at: new Date().toISOString() }).eq('id', id);
+  if (error) return toast(error.message);
+  await loadAllData();
+  toast('Chore claimed.');
+}
+window.claimChore = claimChore;
+
+async function unclaimChore(id) {
+  const { error } = await state.supabase.from('chores').update({ claimed_by: null, claimed_at: null }).eq('id', id);
+  if (error) return toast(error.message);
+  await loadAllData();
+  toast('Chore unclaimed.');
+}
+window.unclaimChore = unclaimChore;
+
 async function completeChore(id) {
   const c = state.chores.find(x => x.id === id);
   if (!c) return;
@@ -521,7 +650,7 @@ async function completeChore(id) {
     notes: ''
   });
   if (compError) return toast(compError.message);
-  const { error: choreError } = await state.supabase.from('chores').update({ last_completed_date: todayISO(), next_due_date: nextDue }).eq('id', c.id);
+  const { error: choreError } = await state.supabase.from('chores').update({ last_completed_date: todayISO(), next_due_date: nextDue, claimed_by: null, claimed_at: null }).eq('id', c.id);
   if (choreError) return toast(choreError.message);
   await loadAllData();
   toast('Chore completed.');
@@ -537,13 +666,91 @@ async function archiveChore(id) {
 }
 window.archiveChore = archiveChore;
 
+
+function openRewardDialog(id = null) {
+  const r = id ? state.rewards.find(x => x.id === id) : null;
+  $('rewardDialogTitle').textContent = r ? 'Edit reward' : 'Add reward';
+  $('rewardIdInput').value = r?.id || '';
+  $('rewardNameInput').value = r?.name || '';
+  $('rewardCostInput').value = r?.cost || 10;
+  $('rewardDescriptionInput').value = r?.description || '';
+  $('rewardDialog').showModal();
+}
+window.openRewardDialog = openRewardDialog;
+
+async function saveReward(e) {
+  e.preventDefault();
+  const payload = {
+    household_id: state.household.id,
+    name: $('rewardNameInput').value.trim(),
+    cost: Number($('rewardCostInput').value || 1),
+    description: $('rewardDescriptionInput').value.trim(),
+    active: true
+  };
+  const id = $('rewardIdInput').value;
+  const query = id ? state.supabase.from('rewards').update(payload).eq('id', id) : state.supabase.from('rewards').insert({ ...payload, created_by: state.user.id });
+  const { error } = await query;
+  if (error) return toast(error.message);
+  $('rewardDialog').close();
+  await loadAllData();
+  toast(id ? 'Reward updated.' : 'Reward added.');
+}
+
+async function archiveReward(id) {
+  if (!confirm('Archive this reward? Existing request history stays.')) return;
+  const { error } = await state.supabase.from('rewards').update({ active: false }).eq('id', id);
+  if (error) return toast(error.message);
+  await loadAllData();
+  toast('Reward archived.');
+}
+window.archiveReward = archiveReward;
+
+async function requestReward(id) {
+  const reward = state.rewards.find(r => r.id === id);
+  if (!reward) return;
+  const balance = pointBalances()[state.user.id]?.balance || 0;
+  if (balance < reward.cost) return toast('Not enough points for that reward yet.');
+  const { error } = await state.supabase.from('reward_requests').insert({
+    household_id: state.household.id,
+    reward_id: reward.id,
+    reward_name: reward.name,
+    reward_cost: reward.cost,
+    requested_by: state.user.id,
+    status: 'pending'
+  });
+  if (error) return toast(error.message);
+  await loadAllData();
+  toast('Reward requested.');
+}
+window.requestReward = requestReward;
+
+async function setRewardRequestStatus(id, status) {
+  const payload = { status };
+  const now = new Date().toISOString();
+  if (['approved', 'declined'].includes(status)) {
+    payload.decided_by = state.user.id;
+    payload.decided_at = now;
+  }
+  if (status === 'fulfilled') {
+    payload.fulfilled_by = state.user.id;
+    payload.fulfilled_at = now;
+  }
+  const { error } = await state.supabase.from('reward_requests').update(payload).eq('id', id);
+  if (error) return toast(error.message);
+  await loadAllData();
+  toast(`Reward ${status}.`);
+}
+window.setRewardRequestStatus = setRewardRequestStatus;
+
 function exportJson() {
   const backup = {
     exported_at: new Date().toISOString(),
     household: state.household,
     members: state.members,
     chores: state.chores,
-    completions: state.completions
+    completions: state.completions,
+    rewards: state.rewards,
+    rewardRequests: state.rewardRequests
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

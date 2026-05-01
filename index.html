@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HomeOps</title>
-  <meta name="theme-color" content="#111827" />
+  <meta name="theme-color" content="#8b5cf6" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -15,7 +15,7 @@
   <header class="app-header">
     <div>
       <h1>HomeOps</h1>
-      <p id="householdName" class="muted">Shared chores & home maintenance</p>
+      <p id="householdName" class="muted">Shared chores, rewards & home maintenance</p>
     </div>
     <button id="signOutBtn" class="ghost hidden">Sign out</button>
   </header>
@@ -72,6 +72,7 @@
         <button class="tab" data-tab="schedule">Schedule</button>
         <button class="tab" data-tab="chores">Chores</button>
         <button class="tab" data-tab="people">People</button>
+        <button class="tab" data-tab="rewards">Rewards</button>
         <button class="tab" data-tab="settings">Settings</button>
       </nav>
 
@@ -119,6 +120,20 @@
         <div id="completionList" class="list"></div>
       </section>
 
+      <section id="rewardsTab" class="tab-page hidden">
+        <div class="section-heading"><h2>Rewards</h2><button id="addRewardBtn">+ Reward</button></div>
+        <div id="rewardBalanceList" class="summary-grid"></div>
+
+        <h2>Reward shop</h2>
+        <div id="rewardShopList" class="list"></div>
+
+        <h2>Open requests</h2>
+        <div id="rewardRequestList" class="list"></div>
+
+        <h2>Reward history</h2>
+        <div id="rewardHistoryList" class="list"></div>
+      </section>
+
       <section id="settingsTab" class="tab-page hidden">
         <div class="card">
           <h2>Household</h2>
@@ -155,6 +170,9 @@
           <option>Kitchen</option>
           <option>Bathroom</option>
           <option>Outdoor</option>
+          <option>Laundry</option>
+          <option>Bedroom</option>
+          <option>General</option>
         </select>
       </label>
       <label>Assigned to
@@ -213,6 +231,26 @@
       </label>
       <div class="button-row">
         <button id="saveChoreBtn" value="default">Save</button>
+        <button class="secondary" value="cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rewardDialog">
+    <form method="dialog" id="rewardForm" class="dialog-form">
+      <h2 id="rewardDialogTitle">Add reward</h2>
+      <input type="hidden" id="rewardIdInput" />
+      <label>Reward name
+        <input id="rewardNameInput" required placeholder="Pick dinner" />
+      </label>
+      <label>Point cost
+        <input id="rewardCostInput" type="number" min="1" value="10" />
+      </label>
+      <label>Description
+        <textarea id="rewardDescriptionInput" rows="3" placeholder="What this reward includes"></textarea>
+      </label>
+      <div class="button-row">
+        <button id="saveRewardBtn" value="default">Save reward</button>
         <button class="secondary" value="cancel">Cancel</button>
       </div>
     </form>

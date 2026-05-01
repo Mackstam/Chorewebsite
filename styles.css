@@ -1,21 +1,22 @@
 :root {
-  --bg: #f7f7f8;
+  --bg: #fff7ed;
   --card: #ffffff;
-  --text: #111827;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --primary: #111827;
-  --secondary: #f3f4f6;
+  --text: #3f2f46;
+  --muted: #7b6b83;
+  --border: #eadcf1;
+  --primary: #8b5cf6;
+  --secondary: #f4eefd;
   --danger: #b91c1c;
   --ok: #047857;
   --warn: #b45309;
-  --shadow: 0 8px 24px rgba(17, 24, 39, 0.08);
+  --accent: #fce7f3;
+  --shadow: 0 10px 26px rgba(139, 92, 246, 0.12);
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: var(--bg);
+  background: linear-gradient(180deg, #fff7ed 0%, #fdf2f8 48%, #f5f3ff 100%);
   color: var(--text);
 }
 .app-header {
@@ -27,7 +28,7 @@ body {
   gap: 1rem;
   align-items: center;
   padding: 1rem;
-  background: rgba(247,247,248,0.92);
+  background: rgba(255, 247, 237, 0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
@@ -74,7 +75,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .button-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 0.35rem;
   margin-bottom: 1rem;
   position: sticky;
@@ -219,4 +220,43 @@ input:disabled { background: #f9fafb; color: var(--muted); }
   .tab { font-size: 0.78rem; padding-left: 0.25rem; padding-right: 0.25rem; }
   .schedule-row { grid-template-columns: 1fr; }
   .time-chip { width: fit-content; }
+}
+
+.category-icon { display: inline-block; width: 1.35rem; text-align: center; }
+.chore-card, .reward-card, .reward-request-card {
+  border-color: #eadcf1;
+}
+.claim-line {
+  background: #faf5ff;
+  border: 1px dashed #d8b4fe;
+  color: #6d517b;
+  border-radius: 14px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+.claim-line.claimed {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+.reward-balance {
+  background: linear-gradient(135deg, #ffffff 0%, #faf5ff 100%);
+}
+.reward-balance p { margin: 0.35rem 0 0; }
+button {
+  box-shadow: 0 5px 14px rgba(139, 92, 246, 0.14);
+}
+button.secondary {
+  box-shadow: none;
+}
+.summary-card {
+  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.08);
+}
+.app-header h1::after {
+  content: " 🏡";
+  font-size: 1.1rem;
+}
+@media (max-width: 640px) {
+  .tabs { grid-template-columns: repeat(3, 1fr); }
 }
