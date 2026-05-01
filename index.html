@@ -14,7 +14,7 @@
 
   <header class="app-header">
     <div>
-      <h1>HomeOps</h1>
+      <div class="brand-row"><h1>HomeOps</h1><span id="appVersion" class="version-pill">v1.3.3</span></div>
       <p id="householdName" class="muted">Shared chores, rewards & home maintenance</p>
     </div>
     <button id="signOutBtn" class="ghost hidden">Sign out</button>
@@ -73,6 +73,7 @@
         <button class="tab" data-tab="chores">Chores</button>
         <button class="tab" data-tab="people">People</button>
         <button class="tab" data-tab="rewards">Rewards</button>
+        <button class="tab" data-tab="completed">Completed</button>
         <button class="tab" data-tab="settings">Settings</button>
       </nav>
 
@@ -83,7 +84,7 @@
           <div class="summary-card"><span id="upcomingCount">0</span><small>Upcoming</small></div>
           <div class="summary-card"><span id="weekPoints">0</span><small>Week pts</small></div>
         </div>
-        <div class="section-heading"><h2>Due now</h2><button id="quickAddBtn" class="ghost">+ Add</button></div>
+        <div class="section-heading"><h2>Due now</h2><button id="quickAddBtn" class="ghost primary-ghost">+ Add chore</button></div>
         <div id="dueNowList" class="list"></div>
         <h2>Upcoming</h2>
         <div id="upcomingList" class="list"></div>
@@ -134,6 +135,12 @@
         <div id="rewardHistoryList" class="list"></div>
       </section>
 
+      <section id="completedTab" class="tab-page hidden">
+        <div class="section-heading"><h2>Completed tasks</h2><button id="refreshCompletedBtn" class="ghost">Refresh</button></div>
+        <p class="muted">A full history of chores marked complete, including who actually completed each task.</p>
+        <div id="completedTaskList" class="list"></div>
+      </section>
+
       <section id="settingsTab" class="tab-page hidden">
         <div class="card">
           <h2>Household</h2>
@@ -145,6 +152,11 @@
           <button id="exportJsonBtn">Export JSON backup</button>
           <p class="small muted">Keep occasional backups in case you ever move away from Supabase free tier.</p>
         </div>
+        <div class="card">
+          <h2>Archived chores</h2>
+          <p class="small muted">Restore archived chores here, or permanently delete ones you are sure you no longer need.</p>
+          <div id="archivedChoreList" class="list"></div>
+        </div>
         <div class="card danger-zone">
           <h2>Config</h2>
           <button id="resetConfigBtn" class="ghost danger">Reset Supabase config on this device</button>
@@ -155,7 +167,7 @@
 
   <dialog id="choreDialog">
     <form method="dialog" id="choreForm" class="dialog-form">
-      <h2 id="choreDialogTitle">Add chore</h2>
+      <div class="dialog-header"><h2 id="choreDialogTitle">Add chore</h2><button type="button" class="dialog-close" id="closeChoreDialogBtn" aria-label="Close">×</button></div>
       <input type="hidden" id="choreIdInput" />
       <label>Name
         <input id="choreTitleInput" required placeholder="Clean bathrooms" />
@@ -238,7 +250,7 @@
 
   <dialog id="rewardDialog">
     <form method="dialog" id="rewardForm" class="dialog-form">
-      <h2 id="rewardDialogTitle">Add reward</h2>
+      <div class="dialog-header"><h2 id="rewardDialogTitle">Add reward</h2><button type="button" class="dialog-close" id="closeRewardDialogBtn" aria-label="Close">×</button></div>
       <input type="hidden" id="rewardIdInput" />
       <label>Reward name
         <input id="rewardNameInput" required placeholder="Pick dinner" />
@@ -256,6 +268,7 @@
     </form>
   </dialog>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

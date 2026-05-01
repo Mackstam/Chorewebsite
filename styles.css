@@ -260,3 +260,101 @@ button.secondary {
 @media (max-width: 640px) {
   .tabs { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* v1.3 fixes: stable tabs, fixed dialogs, archived/completed polish */
+.tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 0.45rem;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex: 0 0 auto;
+  min-width: 92px;
+}
+@media (max-width: 640px) {
+  .tabs { grid-template-columns: none; }
+  .tab { min-width: 88px; }
+}
+
+dialog[open] {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  max-height: min(88vh, 760px);
+  overflow: hidden;
+  padding: 0;
+}
+.dialog-form {
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+  padding: 1rem;
+}
+.dialog-header {
+  position: sticky;
+  top: -1rem;
+  z-index: 2;
+  margin: -1rem -1rem 1rem;
+  padding: 1rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.dialog-header h2 { margin: 0; }
+.dialog-close {
+  background: var(--secondary);
+  color: var(--text);
+  box-shadow: none;
+  border-radius: 999px;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+.dialog-form > .button-row:last-child {
+  position: sticky;
+  bottom: -1rem;
+  margin: 1rem -1rem -1rem;
+  padding: 0.85rem 1rem;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+.archived-card { opacity: 0.92; }
+.pill.upcoming { color: #5b21b6; background: #ede9fe; }
+
+#quickAddBtn, .primary-ghost {
+  background: var(--primary) !important;
+  color: white !important;
+  border: 0 !important;
+  box-shadow: 0 8px 18px rgba(139, 92, 246, 0.22);
+}
+#quickAddBtn:hover, .primary-ghost:hover {
+  filter: brightness(0.97);
+}
+
+/* v1.3.3: visible version indicator */
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.version-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #5b21b6;
+  border: 1px solid #ddd6fe;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}

@@ -1,9 +1,13 @@
+const APP_VERSION = 'v1.3.3';
+
 const state = {
   supabase: null,
   user: null,
   household: null,
   members: [],
   chores: [],
+  archivedChores: [],
+  allChores: [],
   completions: [],
   rewards: [],
   rewardRequests: [],
@@ -12,10 +16,10 @@ const state = {
 };
 
 // Optional deploy config.
-// To avoid entering Supabase details on every new phone/browser, paste your public anon key below before uploading app.js to GitHub Pages.
-// The anon/public key is safe to use in browser apps when Row Level Security is enabled. Do NOT paste the service_role/secret key here.
-const DEPLOY_SUPABASE_URL = 'https://ezgyyqcfacfxasjjwsqd.supabase.co';
-const DEPLOY_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6Z3l5cWNmYWNmeGFzamp3c3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMjAxMTksImV4cCI6MjA5Mjg5NjExOX0.O9q3cj5wzG0ICDpfy-bBYvUGvSDmComV3dQySk11Rjg'; // paste legacy anon public key here if you want the app pre-connected
+// Preferred setup: put your Supabase details in config.js and do not replace config.js during future updates.
+// The anon/public key is safe to use in browser apps when Row Level Security is enabled. Do NOT use the service_role/secret key.
+const DEPLOY_SUPABASE_URL = window.HOMEOPS_CONFIG?.SUPABASE_URL || 'https://ezgyyqcfacfxasjjwsqd.supabase.co';
+const DEPLOY_SUPABASE_ANON_KEY = window.HOMEOPS_CONFIG?.SUPABASE_ANON_KEY || '';
 
 const $ = (id) => document.getElementById(id);
 function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -118,6 +122,9 @@ function bindEvents() {
   $('choreForm').onsubmit = saveChore;
   $('rewardForm').onsubmit = saveReward;
   $('addRewardBtn').onclick = () => openRewardDialog();
+  $('closeChoreDialogBtn').onclick = () => $('choreDialog').close();
+  $('closeRewardDialogBtn').onclick = () => $('rewardDialog').close();
+  $('refreshCompletedBtn').onclick = async () => { await loadAllData(); toast('Completed tasks refreshed.'); };
   $('timeModeInput').onchange = updateTimeFieldVisibility;
   $('copyInviteBtn').onclick = async () => {
     await navigator.clipboard.writeText(state.household.invite_code);
@@ -150,15 +157,23 @@ function bindEvents() {
 
 async function loadHouseholdOrSetup() {
   showOnly('householdScreen');
-  const { data, error } = await state.supabase
+  const { data: memberRow, error } = await state.supabase
     .from('household_members')
-    .select('*, households(*)')
+    .select('*')
     .eq('user_id', state.user.id)
     .limit(1)
     .maybeSingle();
   if (error) return toast(error.message);
-  if (!data) return;
-  state.household = data.households;
+  if (!memberRow) return;
+
+  const { data: household, error: householdError } = await state.supabase
+    .from('households')
+    .select('*')
+    .eq('id', memberRow.household_id)
+    .single();
+  if (householdError) return toast(householdError.message);
+
+  state.household = household;
   await loadAllData();
   showOnly('appScreen');
 }
@@ -232,8 +247,15 @@ async function seedStarterChores() {
 }
 
 async function loadAllData() {
-  await Promise.all([loadMembers(), loadChores(), loadCompletions(), loadRewards(), loadRewardRequests()]);
+  // Load in order so the app does not depend on Supabase/PostgREST relationship schema-cache joins.
+  await loadMembers();
+  await loadChores();
+  await loadCompletions();
+  await loadRewards();
+  await loadRewardRequests();
   $('householdName').textContent = state.household.name;
+  const versionEl = $('appVersion');
+  if (versionEl) versionEl.textContent = APP_VERSION;
   $('inviteCodeDisplay').textContent = `Invite code: ${state.household.invite_code}`;
   fillAssignedOptions();
   renderAll();
@@ -245,20 +267,27 @@ async function loadMembers() {
   state.members = data || [];
 }
 async function loadChores() {
-  const { data, error } = await state.supabase.from('chores').select('*').eq('household_id', state.household.id).eq('active', true).order('next_due_date');
+  const { data, error } = await state.supabase
+    .from('chores')
+    .select('*')
+    .eq('household_id', state.household.id)
+    .order('next_due_date');
   if (error) return toast(error.message);
-  state.chores = (data || []).sort(compareChores);
+  state.allChores = data || [];
+  state.chores = state.allChores.filter(c => c.active !== false).sort(compareChores);
+  state.archivedChores = state.allChores.filter(c => c.active === false).sort(compareChores);
 }
 async function loadCompletions() {
   const { data, error } = await state.supabase
     .from('chore_completions')
-    .select('*, chores(title, weight), household_members(display_name)')
+    .select('*')
     .eq('household_id', state.household.id)
     .order('completed_at', { ascending: false })
-    .limit(50);
+    .limit(250);
   if (error) return toast(error.message);
   state.completions = data || [];
 }
+
 
 async function loadRewards() {
   const { data, error } = await state.supabase
@@ -291,9 +320,11 @@ function fillAssignedOptions() {
 
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['home', 'schedule', 'chores', 'people', 'rewards', 'settings'].forEach(t => $(`${t}Tab`).classList.toggle('hidden', t !== tab));
+  ['home', 'schedule', 'chores', 'people', 'rewards', 'completed', 'settings'].forEach(t => $(`${t}Tab`).classList.toggle('hidden', t !== tab));
   if (tab === 'schedule') renderSchedule();
   if (tab === 'rewards') renderRewards();
+  if (tab === 'completed') renderCompleted();
+  if (tab === 'settings') renderArchivedChores();
 }
 
 function renderAll() {
@@ -302,6 +333,8 @@ function renderAll() {
   renderChores();
   renderPeople();
   renderRewards();
+  renderCompleted();
+  renderArchivedChores();
 }
 
 function dueStatus(chore) {
@@ -318,6 +351,15 @@ function assignedName(value) {
 function memberName(userId) {
   return state.members.find(m => m.user_id === userId)?.display_name || 'Unknown';
 }
+function choreLookup(id) {
+  return state.allChores.find(c => c.id === id) || state.chores.find(c => c.id === id) || state.archivedChores.find(c => c.id === id) || null;
+}
+function completionTitle(c) {
+  return c.chores?.title || choreLookup(c.chore_id)?.title || 'Deleted chore';
+}
+function completionWeight(c) {
+  return Number(c.points_awarded ?? c.chores?.weight ?? choreLookup(c.chore_id)?.weight ?? 0);
+}
 function categoryIcon(category) {
   const icons = {
     'Daily': '✨', 'Weekly': '🧹', 'Monthly': '🗓️', 'Maintenance': '🛠️',
@@ -330,7 +372,7 @@ function pointBalances() {
   const balances = Object.fromEntries(state.members.map(m => [m.user_id, { name: m.display_name, earned: 0, spent: 0, balance: 0 }]));
   state.completions.forEach(c => {
     if (!balances[c.completed_by]) return;
-    balances[c.completed_by].earned += c.chores?.weight || 0;
+    balances[c.completed_by].earned += completionWeight(c);
   });
   state.rewardRequests.filter(r => r.status === 'fulfilled').forEach(r => {
     if (!balances[r.requested_by]) return;
@@ -389,23 +431,68 @@ function setScheduleDate(iso) {
   renderSchedule();
 }
 
+function daysBetween(startIso, endIso) {
+  const a = new Date(`${startIso}T12:00:00`);
+  const b = new Date(`${endIso}T12:00:00`);
+  return Math.round((b - a) / 86400000);
+}
+function monthsBetween(startIso, endIso) {
+  const a = new Date(`${startIso}T12:00:00`);
+  const b = new Date(`${endIso}T12:00:00`);
+  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+}
+function occursOnDate(c, dateIso) {
+  if (!c.next_due_date || dateIso < c.next_due_date) return false;
+  const interval = Math.max(1, Number(c.frequency_interval || 1));
+  const type = c.frequency_type || 'weekly';
+  if (dateIso === c.next_due_date) return true;
+  if (type === 'daily') return daysBetween(c.next_due_date, dateIso) % interval === 0;
+  if (type === 'weekly') return daysBetween(c.next_due_date, dateIso) % (interval * 7) === 0;
+  if (type === 'monthly') {
+    const a = new Date(`${c.next_due_date}T12:00:00`);
+    const b = new Date(`${dateIso}T12:00:00`);
+    return a.getDate() === b.getDate() && monthsBetween(c.next_due_date, dateIso) % interval === 0;
+  }
+  if (type === 'yearly') {
+    const a = new Date(`${c.next_due_date}T12:00:00`);
+    const b = new Date(`${dateIso}T12:00:00`);
+    const years = b.getFullYear() - a.getFullYear();
+    return a.getMonth() === b.getMonth() && a.getDate() === b.getDate() && years % interval === 0;
+  }
+  return false;
+}
+function upcomingOccurrences(days = 30, limit = 10) {
+  const rows = [];
+  const start = new Date(`${todayISO()}T12:00:00`);
+  for (let i = 1; i <= days; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    state.chores.forEach(chore => {
+      if (occursOnDate(chore, iso)) rows.push({ chore, date: iso });
+    });
+    if (rows.length >= limit) break;
+  }
+  return rows.sort((a, b) => String(a.date).localeCompare(String(b.date)) || compareChores(a.chore, b.chore)).slice(0, limit);
+}
+
 function renderHome() {
   const sorted = [...state.chores].sort(compareChores);
   const due = sorted.filter(c => c.next_due_date <= todayISO());
-  const upcoming = sorted.filter(c => c.next_due_date > todayISO()).slice(0, 8);
+  const upcoming = upcomingOccurrences(30, 10);
   const overdue = sorted.filter(c => c.next_due_date < todayISO());
-  $('todayCount').textContent = state.chores.filter(c => c.next_due_date === todayISO()).length;
+  $('todayCount').textContent = state.chores.filter(c => occursOnDate(c, todayISO())).length;
   $('overdueCount').textContent = overdue.length;
-  $('upcomingCount').textContent = state.chores.filter(c => c.next_due_date > todayISO()).length;
-  $('weekPoints').textContent = state.completions.filter(c => c.completed_at.slice(0,10) >= weekStartISO()).reduce((sum, c) => sum + (c.chores?.weight || 0), 0);
-  $('dueNowList').innerHTML = due.length ? due.map(choreCard).join('') : empty('Nothing due right now.');
-  $('upcomingList').innerHTML = upcoming.length ? upcoming.map(choreCard).join('') : empty('No upcoming chores.');
+  $('upcomingCount').textContent = upcoming.length;
+  $('weekPoints').textContent = state.completions.filter(c => c.completed_at.slice(0,10) >= weekStartISO()).reduce((sum, c) => sum + completionWeight(c), 0);
+  $('dueNowList').innerHTML = due.length ? due.map(c => choreCard(c)).join('') : empty('Nothing due right now.');
+  $('upcomingList').innerHTML = upcoming.length ? upcoming.map(row => choreCard(row.chore, { occurrenceDate: row.date, showActions: false })).join('') : empty('No upcoming chores in the next 30 days.');
 }
 
 function renderSchedule() {
   if (!$('scheduleList')) return;
   $('scheduleDateInput').value = state.currentScheduleDate;
-  const chores = state.chores.filter(c => c.next_due_date === state.currentScheduleDate).sort(compareChores);
+  const chores = state.chores.filter(c => occursOnDate(c, state.currentScheduleDate)).sort(compareChores);
   if (!chores.length) {
     $('scheduleList').innerHTML = empty(`No chores scheduled for ${fmtDate(state.currentScheduleDate)}.`);
     return;
@@ -423,7 +510,7 @@ function scheduleRow(c) {
     <div class="schedule-row item">
       <div class="time-chip">${escapeHtml(scheduleLabel(c))}</div>
       <div class="schedule-row-main">
-        ${choreCard(c)}
+        ${choreCard(c, { occurrenceDate: state.currentScheduleDate, showActions: state.currentScheduleDate <= todayISO() })}
       </div>
     </div>
   `;
@@ -440,15 +527,27 @@ function renderPeople() {
   const byUser = Object.fromEntries(state.members.map(m => [m.user_id, { name: m.display_name, points: 0, count: 0 }]));
   state.completions.filter(c => c.completed_at.slice(0,10) >= start).forEach(c => {
     if (!byUser[c.completed_by]) return;
-    byUser[c.completed_by].points += c.chores?.weight || 0;
+    byUser[c.completed_by].points += completionWeight(c);
     byUser[c.completed_by].count += 1;
   });
   $('peopleList').innerHTML = Object.values(byUser).map(p => `
     <div class="item"><div class="item-top"><div><h3>${escapeHtml(p.name)}</h3><p class="muted">${p.count} completions this week</p></div><strong>${p.points} pts</strong></div></div>
   `).join('') || empty('No household members yet.');
-  $('completionList').innerHTML = state.completions.length ? state.completions.slice(0, 12).map(c => `
-    <div class="item"><div class="item-top"><div><h3>${escapeHtml(c.chores?.title || 'Deleted chore')}</h3><p class="muted">Completed by ${escapeHtml(c.household_members?.display_name || 'Unknown')} on ${fmtDate(c.completed_at.slice(0,10))}</p></div><span class="pill done">${c.chores?.weight || 0} pts</span></div></div>
-  `).join('') : empty('No completions yet.');
+  $('completionList').innerHTML = state.completions.length ? state.completions.slice(0, 12).map(completionCard).join('') : empty('No completions yet.');
+}
+
+function renderCompleted() {
+  const el = $('completedTaskList');
+  if (!el) return;
+  el.innerHTML = state.completions.length ? state.completions.map(completionCard).join('') : empty('No completed tasks yet.');
+}
+
+function completionCard(c) {
+  const completedDate = String(c.completed_at).slice(0, 10);
+  const completedTime = new Date(c.completed_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `
+    <div class="item"><div class="item-top"><div><h3>${escapeHtml(completionTitle(c))}</h3><p class="muted">Completed by ${escapeHtml(memberName(c.completed_by))} on ${fmtDate(completedDate)} at ${completedTime}</p></div><span class="pill done">${completionWeight(c)} pts</span></div></div>
+  `;
 }
 
 
@@ -506,12 +605,15 @@ function rewardRequestCard(r) {
   `;
 }
 
-function choreCard(c) {
-  const status = dueStatus(c);
-  const statusText = status === 'overdue' ? `Overdue · due ${fmtDate(c.next_due_date)}` : status === 'today' ? 'Due today' : `Due ${fmtDate(c.next_due_date)}`;
+function choreCard(c, opts = {}) {
+  const occurrenceDate = opts.occurrenceDate || c.next_due_date;
+  const showActions = opts.showActions !== false;
+  const status = occurrenceDate < todayISO() ? 'overdue' : occurrenceDate === todayISO() ? 'today' : 'upcoming';
+  const statusText = status === 'overdue' ? `Overdue · due ${fmtDate(occurrenceDate)}` : status === 'today' ? 'Due today' : `Due ${fmtDate(occurrenceDate)}`;
   const priority = c.priority || 'normal';
   const claimedText = c.claimed_by ? `${escapeHtml(memberName(c.claimed_by))} plans to do this` : 'Nobody has claimed this yet';
   const icon = categoryIcon(c.category);
+  const futureNote = !showActions ? `<p class="small muted">Preview of this recurring chore. Actions are available when it is due.</p>` : '';
   return `
     <div class="item chore-card">
       <div class="item-top">
@@ -530,15 +632,40 @@ function choreCard(c) {
         <span class="pill">${c.recurrence_mode}</span>
       </div>
       ${c.notes ? `<p class="small muted">${escapeHtml(c.notes)}</p>` : ''}
+      ${futureNote}
       <div class="item-actions">
-        ${c.claimed_by ? `<button class="secondary" onclick="unclaimChore('${c.id}')">Unclaim</button>` : `<button class="secondary" onclick="claimChore('${c.id}')">I'll do it</button>`}
-        <button onclick="completeChore('${c.id}')">Complete</button>
+        ${showActions ? (c.claimed_by ? `<button class="secondary" onclick="unclaimChore('${c.id}')">Unclaim</button>` : `<button class="secondary" onclick="claimChore('${c.id}')">I'll do it</button>`) : ''}
+        ${showActions ? `<button onclick="completeChore('${c.id}')">Complete</button>` : ''}
+        <button class="secondary" onclick="duplicateChore('${c.id}')">Duplicate</button>
         <button class="secondary" onclick="openChoreDialog('${c.id}')">Edit</button>
         <button class="ghost danger" onclick="archiveChore('${c.id}')">Archive</button>
       </div>
     </div>
   `;
 }
+
+function archivedChoreCard(c) {
+  return `
+    <div class="item chore-card archived-card">
+      <div class="item-top">
+        <div><h3>${categoryIcon(c.category)} ${escapeHtml(c.title)}</h3><p class="muted">${escapeHtml(frequencyLabel(c))} · ${escapeHtml(c.category)} · ${c.weight} pts</p></div>
+        <span class="pill">Archived</span>
+      </div>
+      <div class="item-actions">
+        <button onclick="restoreChore('${c.id}')">Restore</button>
+        <button class="secondary" onclick="duplicateChore('${c.id}')">Duplicate</button>
+        <button class="ghost danger" onclick="deleteChore('${c.id}')">Delete forever</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderArchivedChores() {
+  const el = $('archivedChoreList');
+  if (!el) return;
+  el.innerHTML = state.archivedChores.length ? state.archivedChores.map(archivedChoreCard).join('') : empty('No archived chores.');
+}
+
 
 function empty(text) { return `<div class="item"><p class="muted">${text}</p></div>`; }
 function escapeHtml(str) {
@@ -557,7 +684,7 @@ function updateTimeFieldVisibility() {
 }
 
 function openChoreDialog(id = null) {
-  const c = id ? state.chores.find(x => x.id === id) : null;
+  const c = id ? choreLookup(id) : null;
   $('choreDialogTitle').textContent = c ? 'Edit chore' : 'Add chore';
   $('choreIdInput').value = c?.id || '';
   $('choreTitleInput').value = c?.title || '';
@@ -575,6 +702,7 @@ function openChoreDialog(id = null) {
   $('notesInput').value = c?.notes || '';
   updateTimeFieldVisibility();
   $('choreDialog').showModal();
+  $('choreDialog').scrollTop = 0;
 }
 window.openChoreDialog = openChoreDialog;
 
@@ -659,12 +787,52 @@ window.completeChore = completeChore;
 
 async function archiveChore(id) {
   if (!confirm('Archive this chore? It will stop appearing but completion history stays.')) return;
-  const { error } = await state.supabase.from('chores').update({ active: false }).eq('id', id);
+  const { error } = await state.supabase.from('chores').update({ active: false, claimed_by: null, claimed_at: null }).eq('id', id);
   if (error) return toast(error.message);
   await loadAllData();
   toast('Chore archived.');
 }
 window.archiveChore = archiveChore;
+
+async function restoreChore(id) {
+  const { error } = await state.supabase.from('chores').update({ active: true }).eq('id', id);
+  if (error) return toast(error.message);
+  await loadAllData();
+  toast('Chore restored.');
+}
+window.restoreChore = restoreChore;
+
+async function deleteChore(id) {
+  const c = choreLookup(id);
+  if (!confirm(`Permanently delete "${c?.title || 'this chore'}"? This can also remove its completion history. Archive is safer.`)) return;
+  const { error } = await state.supabase.from('chores').delete().eq('id', id);
+  if (error) return toast(error.message);
+  await loadAllData();
+  toast('Chore deleted.');
+}
+window.deleteChore = deleteChore;
+
+function duplicateChore(id) {
+  const c = choreLookup(id);
+  if (!c) return toast('Chore not found.');
+  openChoreDialog(null);
+  $('choreTitleInput').value = c.title;
+  $('categoryInput').value = c.category || 'General';
+  $('assignedToInput').value = c.assigned_to || 'Anyone';
+  $('frequencyTypeInput').value = c.frequency_type || 'weekly';
+  $('frequencyIntervalInput').value = c.frequency_interval || 1;
+  $('nextDueDateInput').value = c.next_due_date || todayISO();
+  $('recurrenceModeInput').value = c.recurrence_mode || 'fixed';
+  $('priorityInput').value = c.priority || 'normal';
+  $('timeModeInput').value = c.time_mode || 'anytime';
+  $('startTimeInput').value = c.start_time ? String(c.start_time).slice(0,5) : '';
+  $('endTimeInput').value = c.end_time ? String(c.end_time).slice(0,5) : '';
+  $('weightInput').value = c.weight || 2;
+  $('notesInput').value = c.notes || '';
+  updateTimeFieldVisibility();
+  toast('Duplicated. Adjust anything, then save.');
+}
+window.duplicateChore = duplicateChore;
 
 
 function openRewardDialog(id = null) {
@@ -747,7 +915,7 @@ function exportJson() {
     exported_at: new Date().toISOString(),
     household: state.household,
     members: state.members,
-    chores: state.chores,
+    chores: state.allChores,
     completions: state.completions,
     rewards: state.rewards,
     rewardRequests: state.rewardRequests
