@@ -15,7 +15,7 @@ const state = {
 // To avoid entering Supabase details on every new phone/browser, paste your public anon key below before uploading app.js to GitHub Pages.
 // The anon/public key is safe to use in browser apps when Row Level Security is enabled. Do NOT paste the service_role/secret key here.
 const DEPLOY_SUPABASE_URL = 'https://ezgyyqcfacfxasjjwsqd.supabase.co';
-const DEPLOY_SUPABASE_ANON_KEY = ''; // paste legacy anon public key here if you want the app pre-connected
+const DEPLOY_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6Z3l5cWNmYWNmeGFzamp3c3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMjAxMTksImV4cCI6MjA5Mjg5NjExOX0.O9q3cj5wzG0ICDpfy-bBYvUGvSDmComV3dQySk11Rjg'; // paste legacy anon public key here if you want the app pre-connected
 
 const $ = (id) => document.getElementById(id);
 function todayISO() { return new Date().toISOString().slice(0, 10); }
